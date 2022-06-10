@@ -53,6 +53,9 @@ static const struct device *uart_dev;
 static uint8_t at_buf[AT_MAX_CMD_LEN];
 static uint16_t at_buf_len;
 static bool at_buf_overflow;
+static bool at_cmd_pending;
+static uint8_t *overflow_buf = NULL;
+static size_t overflow_buf_len;
 static struct ring_buf data_rb;
 static bool datamode_rx_disabled;
 static slm_datamode_handler_t datamode_handler;
@@ -152,6 +155,7 @@ static int uart_receive(void)
 		return ret;
 	}
 	next_buf = uart_rx_buf[1];
+	at_cmd_pending = false;
 	at_buf_overflow = false;
 	at_buf_len = 0;
 
@@ -801,7 +805,14 @@ static void cmd_send(struct k_work *work)
 	}
 
 done:
-	(void)uart_receive();
+	if (overflow_buf != NULL) {
+		if (in_datamode()) {
+			raw_rx_handler(overflow_buf, overflow_buf_len);
+		}
+		k_free(overflow_buf);
+		overflow_buf = NULL;
+	}
+	at_cmd_pending = false;
 }
 
 static int cmd_rx_handler(uint8_t character)
@@ -862,8 +873,7 @@ static int cmd_rx_handler(uint8_t character)
 	return 0;
 
 send:
-	uart_rx_disable(uart_dev);
-
+	at_cmd_pending = true;
 	at_buf[at_cmd_len] = '\0';
 	at_buf_len = at_cmd_len;
 	k_work_submit(&cmd_send_work);
@@ -879,7 +889,6 @@ send:
 static void uart_callback(const struct device *dev, struct uart_event *evt, void *user_data)
 {
 	int err;
-	static uint16_t pos;
 	static bool enable_rx_retry;
 
 	ARG_UNUSED(dev);
@@ -897,29 +906,40 @@ static void uart_callback(const struct device *dev, struct uart_event *evt, void
 		break;
 	case UART_RX_RDY:
 		if (slm_operation_mode == SLM_AT_COMMAND_MODE) {
-			for (int i = pos; i < (pos + evt->data.rx.len); i++) {
-				err = cmd_rx_handler(evt->data.rx.buf[i]);
-				if (err) {
-					return;
+			for (int i = 0; i < evt->data.rx.len; i++) {
+				if (!at_cmd_pending) {
+					err = cmd_rx_handler(evt->data.rx.buf[evt->data.rx.offset + i]);
+					if (err) {
+						return;
+					}
+				} else {
+					if (overflow_buf == NULL) {
+						overflow_buf = k_malloc(evt->data.rx.len - i);
+						if (overflow_buf != NULL) {
+							memcpy(overflow_buf, evt->data.rx.buf + evt->data.rx.offset + i, 
+											evt->data.rx.len - i);
+							overflow_buf_len = evt->data.rx.len - i;
+							LOG_DBG("Overflow buffer created size: %d", overflow_buf_len);
+						}
+					}
+					break;
 				}
 			}
 		} else if (slm_operation_mode == SLM_DATA_MODE) {
 			LOG_DBG("RX_RDY %d", evt->data.rx.len);
-			err = raw_rx_handler(&(evt->data.rx.buf[pos]), evt->data.rx.len);
+			err = raw_rx_handler(&(evt->data.rx.buf[evt->data.rx.offset]), evt->data.rx.len);
 			if (err) {
 				return;
 			}
 #if defined(CONFIG_SLM_NRF52_DFU_LEGACY)
 		} else if (slm_operation_mode == SLM_DFU_MODE) {
-			(void)dfu_rx_handler(&(evt->data.rx.buf[pos]), evt->data.rx.len);
+			(void)dfu_rx_handler(&(evt->data.rx.buf[evt->data.rx.offset]), evt->data.rx.len);
 #endif /* CONFIG_SLM_NRF52_DFU_LEGACY */
 		} else {
 			LOG_WRN("No handler");
 		}
-		pos += evt->data.rx.len;
 		break;
 	case UART_RX_BUF_REQUEST:
-		pos = 0;
 		err = uart_rx_buf_rsp(uart_dev, next_buf, sizeof(uart_rx_buf[0]));
 		if (err) {
 			LOG_WRN("UART RX buf rsp: %d", err);
