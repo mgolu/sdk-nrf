@@ -78,6 +78,15 @@ void rsp_send_error(void);
 void data_send(const uint8_t *data, size_t len);
 
 /**
+ * @brief Send data received in data mode. Block until TX complete.
+ *
+ * @param data Raw data received
+ * @param len Length of raw data
+ *
+ */
+void data_send_blocking(const uint8_t *data, size_t len);
+
+/**
  * @brief Request SLM AT host to enter data mode
  *
  * No AT unsolicited message or command response allowed in data mode.

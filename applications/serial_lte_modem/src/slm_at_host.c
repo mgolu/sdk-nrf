@@ -168,7 +168,7 @@ void rsp_send(const char *fmt, ...)
 	}
 }
 
-void data_send(const uint8_t *data, size_t len)
+static void data_send_wk(const uint8_t *data, size_t len, bool block)
 {
 	enum pm_device_state state = PM_DEVICE_STATE_OFF;
 
@@ -183,8 +183,22 @@ void data_send(const uint8_t *data, size_t len)
 		ring_buf_put(&data_rb, data, len);
 		(void)indicate_start();
 	} else {
-		(void)uart_send(data, len);
+		int ret = uart_send(data, len);
+		if (block && !ret) {
+			k_sem_take(&tx_done, K_FOREVER);
+			k_sem_give(&tx_done);
+		}
 	}
+}
+
+void data_send(const uint8_t *data, size_t len)
+{
+	data_send_wk(data, len, false);
+}
+
+void data_send_blocking(const uint8_t *data, size_t len)
+{
+	data_send_wk(data, len, true);
 }
 
 static int uart_receive(void)

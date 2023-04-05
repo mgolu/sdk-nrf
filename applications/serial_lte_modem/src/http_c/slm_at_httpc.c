@@ -86,24 +86,24 @@ static void response_cb(struct http_response *rsp,
 			if (rsp->body_frag_start) {
 				size_t headers_len = rsp->body_frag_start - rsp->recv_buf;
 				/* Send last chunk of headers and URC */
-				data_send(rsp->recv_buf, headers_len);
+				data_send_blocking(rsp->recv_buf, headers_len);
 				httpc.rsp_header_length += headers_len;
 				rsp_send("\r\n#XHTTPCRSP:%d,%hu\r\n",
 					httpc.rsp_header_length,
 					final_data);
 				httpc.state = HTTPC_RSP_HEADER_DONE;
 				/* Send first chunk of body */
-				data_send(rsp->recv_buf + headers_len,
+				data_send_blocking(rsp->recv_buf + headers_len,
 					  rsp->data_len - headers_len);
 				httpc.rsp_body_length += rsp->data_len - headers_len;
 			} else {
 				/* All headers */
-				data_send(rsp->recv_buf, rsp->data_len);
+				data_send_blocking(rsp->recv_buf, rsp->data_len);
 				httpc.rsp_header_length += rsp->data_len;
 			}
 		} else {
 			/* All body */
-			data_send(rsp->recv_buf, rsp->data_len);
+			data_send_blocking(rsp->recv_buf, rsp->data_len);
 			httpc.rsp_body_length += rsp->data_len;
 		}
 	}
