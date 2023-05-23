@@ -18,4 +18,8 @@ if MPSL && !MPSL_FEM_ONLY
 rsource "mpsl/Kconfig"
 endif
 
+if MODEM
+rsource "modem/Kconfig.nrf-slm"
+endif
+
 endmenu

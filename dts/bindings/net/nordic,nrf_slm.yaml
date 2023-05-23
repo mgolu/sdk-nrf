@@ -1,0 +1,10 @@
+# Copyright (c) 2023 Nordic Semiconductor ASA
+# SPDX-License-Identifier: Apache-2.0
+
+description: nordic nRF9 SLM modem
+
+compatible: "nordic,nrf_slm"
+
+include: uart-device.yaml
+
+on-bus: uart
